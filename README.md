@@ -51,16 +51,12 @@ L'empreinte est relevée dans un vrai navigateur (Chromium, piloté par Puppetee
 
 Chaque relevé est répété dans toutes les combinaisons suivantes :
 
-```mermaid
-flowchart LR
-    P["Chaque page"] --> L1["375 px<br/>téléphone"]
-    P --> L2["1440 px<br/>ordinateur"]
-    L1 --> T1["Thème clair"]
-    L1 --> T2["Thème sombre"]
-    L2 --> T3["Thème clair"]
-    L2 --> T4["Thème sombre"]
-    T1 & T2 & T3 & T4 --> E["Chaque état décrit dans le scénario<br/>chargement, menu ouvert, formulaire rempli..."]
-```
+| Largeur d'écran | Thème clair | Thème sombre |
+|---|---|---|
+| 375 px (téléphone) | Mesuré | Mesuré |
+| 1440 px (ordinateur) | Mesuré | Mesuré |
+
+Soit quatre relevés pour chaque état de chaque page. Les largeurs se règlent avec l'option `--largeurs`.
 
 Le thème sombre n'est mesuré que si la page le prend en charge ; le skill le détecte seul. Les états (menu ouvert, onglet sélectionné, message d'erreur, formulaire rempli) sont décrits dans un court scénario, rejoué à l'identique avant et après. Un état qui ne figure pas dans le scénario n'est pas protégé : le skill les recense avant de commencer.
 
