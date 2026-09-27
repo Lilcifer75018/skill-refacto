@@ -10,10 +10,10 @@ description: "Refactorisation prouvée de tout ce qui contient du code : pages H
 Quand ce skill est invoqué, afficher d'abord ce court mode d'emploi, puis enchaîner directement si la cible est déjà donnée :
 
 > **/refacto : du code plus simple, rien de changé à l'écran**
-> - `/refacto [fichier ou dossier]` : je range le code d'une page, d'une appli ou d'un script
-> - Je prends d'abord une empreinte de ce que tu vois (téléphone et ordinateur, clair et sombre, chaque menu ouvert). Ensuite je range le code par petits lots et, après chaque lot, je vérifie que tout est identique au pixel près
-> - Je range seul ce qui ne change rien pour l'utilisateur. Un bug trouvé en route ou un choix qui ressemble à une décision, je te les soumets sans y toucher
-> - Rien n'est commité, poussé ni mis en ligne sans ton feu vert
+> - `/refacto [fichier ou dossier]` : je range le code d'une page, d'une application ou d'un script
+> - Je relève d'abord une empreinte de ce que voit l'utilisateur (téléphone et ordinateur, thème clair et sombre, chaque menu ouvert). Je range ensuite le code par petits lots et, après chaque lot, je vérifie que tout est identique au pixel près
+> - Je range seul ce qui ne change rien pour l'utilisateur. Un bug trouvé en route, ou un choix qui ressemble à une décision, vous est soumis : je n'y touche pas
+> - Rien n'est commité, poussé ni mis en ligne sans votre accord
 
 ## La règle d'or
 
