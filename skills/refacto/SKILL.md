@@ -1,6 +1,6 @@
 ---
 name: refacto
-description: "Refactorisation prouvée de tout ce qui contient du code : pages HTML, mini-applis, sites statiques, démos, scripts Node ou Python, nœuds Code n8n. Rend le code plus simple à lire et à modifier SANS rien changer pour l'utilisateur, et le prouve par mesure : empreinte avant/après (DOM, styles calculés de chaque élément, focus, pixels) à 375 et 1440 px, en thème clair et sombre, état par état ; ou sorties identiques à l'octet pour un script. Inventaire outillé du code mort et des doublons, rangement par lots vérifiés un à un, nettoyage, rapport. Les bugs et les choix douteux trouvés en route sont soumis à l'utilisateur, jamais corrigés en silence. Trigger : /refacto [fichier, dossier ou projet], ou « refactorise », « nettoie le code », « simplifie le code de cette page », « range ce script »."
+description: "Refactorisation prouvée de tout ce qui contient du code : pages HTML, mini-applis, sites statiques, démos, scripts Node ou Python, nœuds Code n8n. Rend le code plus simple à lire et à modifier SANS rien changer pour l'utilisateur, et le prouve par mesure : empreinte avant/après (DOM, styles calculés de chaque élément, arbre d'accessibilité, focus, pixels) à 375 et 1440 px, en thème clair et sombre, état par état ; ou sorties identiques à l'octet pour un script. Ouverture automatique des menus et onglets, rapport visuel avant/après, poids et vitesse de chargement. Inventaire outillé du code mort et des doublons, rangement par lots vérifiés un à un, nettoyage, rapport. Les bugs et les choix douteux trouvés en route sont soumis à l'utilisateur, jamais corrigés en silence. Trigger : /refacto [fichier, dossier ou projet], ou « refactorise », « nettoie le code », « simplifie le code de cette page », « range ce script »."
 ---
 
 # Refactorisation prouvée
@@ -13,6 +13,7 @@ Quand ce skill est invoqué, afficher d'abord ce court mode d'emploi, puis encha
 > - `/refacto [fichier ou dossier]` : je range le code d'une page, d'une application ou d'un script
 > - Je relève d'abord une empreinte de ce que voit l'utilisateur (téléphone et ordinateur, thème clair et sombre, chaque menu ouvert). Je range ensuite le code par petits lots et, après chaque lot, je vérifie que tout est identique au pixel près
 > - Je range seul ce qui ne change rien pour l'utilisateur. Un bug trouvé en route, ou un choix qui ressemble à une décision, vous est soumis : je n'y touche pas
+> - À la fin, un rapport visuel montre les captures avant et après, les écarts entourés, et le poids de la page
 > - Rien n'est commité, poussé ni mis en ligne sans votre accord
 
 ## La règle d'or
@@ -32,15 +33,21 @@ Cinq scripts dans le dossier `scripts/` de ce skill. Il faut Node 18 ou plus, et
 |---|---|---|
 | `verifier-syntaxe.mjs` | Tout le code se lit-il sans erreur ? Fichiers .js/.mjs/.cjs, scripts écrits dans les pages HTML (modules compris), JSON-LD, .json, .py | `node verifier-syntaxe.mjs <dossier>` |
 | `code-mort.mjs` | Inventaire des suspects : classes et identifiants jamais posés, variables CSS et @keyframes inutilisées, déclarations CSS en double, fonctions jamais appelées, fichiers orphelins | `node code-mort.mjs <dossier> --exclure <fichier généré>` |
-| `empreinte.mjs` | Preuve pour une page ou une appli : DOM, style calculé de chaque élément et de ses pseudo-éléments, focus, débordement horizontal, pixels, dans chaque état, à 375 et 1440 px, en clair et en sombre | `node empreinte.mjs <page> <ref.json> --etats etats.mjs` |
+| `empreinte.mjs` | Preuve pour une page ou une appli : DOM, style calculé de chaque élément et de ses pseudo-éléments, arbre d'accessibilité, focus, débordement horizontal, pixels, dans chaque état, à 375 et 1440 px, en clair et en sombre. Relève aussi le poids et la vitesse de chargement, et écrit un rapport visuel | `node empreinte.mjs <page> <ref.json> --etats etats.mjs --explorer` |
 | `sorties.mjs` | Preuve pour un script : code de sortie, texte affiché (dates et durées masquées), fichiers produits à l'octet près | `node sorties.mjs <ref.json> --commande "node build.mjs" --produit dist` |
-| `auto-test.mjs` | Vérifie que les quatre outils voient ce qu'ils doivent voir, et rien quand il n'y a rien (22 contrôles sur un site de test) | `node auto-test.mjs` |
+| `auto-test.mjs` | Vérifie que les quatre outils voient ce qu'ils doivent voir, et rien quand il n'y a rien (29 contrôles sur un site de test) | `node auto-test.mjs` |
 
 `empreinte.mjs` et `sorties.mjs` fonctionnent de la même façon : si la référence n'existe pas, elle est créée ; si elle existe, elle sert de comparaison. Code de sortie 0 si tout est identique, 1 sinon, et chaque écart est montré en clair (élément, propriété, avant, après, nombre de pixels et zone touchée).
 
 Pour un site entier, `empreinte.mjs <dossier> <ref.json> --toutes-pages --exclure build` trouve seul toutes les pages. Ainsi, une page ajoutée entre dans la mesure sans rien déclarer : un outil dont la liste de pages est écrite à la main finit toujours par en oublier.
 
 `exemple-etats.mjs` est le modèle du scénario d'états. Chaque état que l'utilisateur peut voir doit y être capturé : menu ouvert, onglet, feuille, message d'erreur, formulaire rempli, lien direct vers une ancre. **Un état non capturé est un état non protégé.**
+
+Ce que `empreinte.mjs` apporte en plus de la comparaison :
+- **`--explorer`** : l'outil ouvre seul, un par un, chaque bouton, onglet, menu déroulant, élément `<summary>` et lien interne de la page, à partir d'une page rechargée et d'un stockage vide, puis capture l'état obtenu. Un état oublié dans le scénario reste ainsi protégé. Il ne clique jamais un bouton destructif (supprimer, effacer, réinitialiser, se déconnecter) ni un bouton d'envoi de formulaire, et ne suit pas un lien qui mène à une autre page : il les liste. Le scénario reste nécessaire pour les états à plusieurs étapes (formulaire rempli, parcours complet). Sur un site entier, limiter le coût avec `--max-etats` et `--largeurs 375`, ou n'explorer que les pages qui ont des éléments interactifs.
+- **Accessibilité** : l'arbre que lit un lecteur d'écran (rôles, noms, états déplié ou coché) est relevé dans chaque état. Un bouton dont le nom accessible change, un titre qui perd son niveau ou un menu qui ne dit plus s'il est ouvert sont des écarts, même si l'écran est identique.
+- **Poids et vitesse** : au chargement de chaque page, le nombre de requêtes, le poids brut et compressé (gzip recalculé) et les temps d'affichage. En comparaison, la variation est donnée en pourcentage. C'est une information, jamais un écart : elle sert à chiffrer le gain d'une refactorisation ou le coût d'une extraction (voir l'étape 2). Les temps mesurés en local sont indicatifs.
+- **Rapport visuel** : en comparaison, `<référence>.rapport.html` est écrit à côté de la référence. Pour chaque état en écart, il montre la capture d'avant, celle d'après et une image des différences (pixels changés en rouge, zone entourée), puis le poids et la vitesse, le bruit de rendu et la liste des états identiques. Il se lit sans connexion, en clair comme en sombre, sur téléphone comme sur ordinateur. C'est la preuve à montrer à quelqu'un qui ne lit pas le code.
 
 Lancer `auto-test.mjs` au premier usage et après toute modification d'un script. Un outil de preuve qui ment est pire que pas d'outil du tout.
 
@@ -62,7 +69,7 @@ Dans cet ordre, avant de modifier une seule ligne :
 1. `verifier-syntaxe.mjs` sur le projet. Une erreur existe déjà ? La signaler, et ne pas refactoriser par-dessus.
 2. Les tests du projet, s'il en a. Ils doivent être verts. S'ils sont rouges avant de commencer, le dire et s'arrêter là.
 3. L'empreinte de référence :
-   - page ou appli : écrire le scénario d'états (copie de `exemple-etats.mjs`), puis lancer `empreinte.mjs`. Le relancer aussitôt en comparaison, SANS rien avoir modifié : s'il trouve des écarts, la page n'est pas stable (visuel posé au hasard, date, animation). Neutraliser la source d'instabilité dans le scénario, au lieu d'ignorer les écarts ;
+   - page ou appli : écrire le scénario d'états (copie de `exemple-etats.mjs`), puis lancer `empreinte.mjs` avec `--explorer`. Lire la liste des éléments non ouverts qu'il affiche : un état important qui en fait partie va dans le scénario. Relancer aussitôt en comparaison, SANS rien avoir modifié : s'il trouve des écarts, la page n'est pas stable (visuel posé au hasard, date, animation). Neutraliser la source d'instabilité dans le scénario, au lieu d'ignorer les écarts ;
    - script, construction de site : `sorties.mjs` avec les mêmes entrées qu'en usage réel ;
    - nœud Code n8n : récupérer les éléments d'entrée d'une exécution réelle et les rejouer dans un petit harnais local, où `$input.all()` renvoie ces éléments, puis passer ce harnais à `sorties.mjs`. Un secret en clair trouvé en route se signale ; il ne se « range » pas.
 
@@ -75,7 +82,7 @@ Dans cet ordre, avant de modifier une seule ligne :
    - **Correction**, qui change quelque chose pour l'utilisateur : bug, défaut d'accessibilité, débordement à 375 px, couleur codée en dur qui casse le thème sombre. On la liste sans la faire ;
    - **Décision**, un choix qui a peut-être une raison (texte, ordre, comportement inhabituel) : on cherche sa justification, et on la liste si on ne la trouve pas.
 
-Mesurer avant d'extraire. Mettre en commun ce qui se répète a un coût : une feuille de styles partagée, c'est une requête bloquante de plus pour chaque visiteur. Chiffrer ce coût en Ko compressés et le comparer au gain. Et ne mettre en commun que ce qui est **strictement identique** : deux règles au même nom mais aux valeurs différentes sont des faux jumeaux, pas des doublons. Sur un site réel, 29 sélecteurs l'étaient, `:root` portait 10 palettes différentes, et seules 11 règles étaient vraiment identiques partout. Ce qui est écarté après mesure s'écrit dans le rapport avec ses chiffres, pour que la prochaine session ne refasse pas l'analyse.
+Mesurer avant d'extraire. Mettre en commun ce qui se répète a un coût : une feuille de styles partagée, c'est une requête bloquante de plus pour chaque visiteur. Chiffrer ce coût en Ko compressés (la ligne « Poids et vitesse » d'`empreinte.mjs` le donne, page par page) et le comparer au gain. Et ne mettre en commun que ce qui est **strictement identique** : deux règles au même nom mais aux valeurs différentes sont des faux jumeaux, pas des doublons. Sur un site réel, 29 sélecteurs l'étaient, `:root` portait 10 palettes différentes, et seules 11 règles étaient vraiment identiques partout. Ce qui est écarté après mesure s'écrit dans le rapport avec ses chiffres, pour que la prochaine session ne refasse pas l'analyse.
 
 Point d'arrêt : s'il y a des corrections ou des décisions, les soumettre à l'utilisateur sous forme de questions à choix, avec une recommandation. Les formuler en langage concret (« le menu ne se ferme pas avec Échap sur téléphone »), jamais en jargon. Le rangement, lui, continue pendant ce temps.
 
@@ -113,7 +120,7 @@ Puis une dernière comparaison complète, avec la même exigence que pendant le 
 ### Étape 6 : rendre compte
 
 - Le détail va dans la documentation du projet : ce qui a été rangé, lot par lot ; les chiffres (lignes avant et après, poids de la page, nombre d'états et de contrôles comparés) ; les écarts expliqués ; les corrections et décisions en attente.
-- À l'utilisateur, le résultat en une phrase (« rangé, 86 états identiques au pixel près »), puis ce qui l'attend : une question, ou le feu vert pour la mise en ligne.
+- À l'utilisateur, le résultat en une phrase (« rangé, 86 états identiques au pixel près »), puis ce qui l'attend : une question, ou le feu vert pour la mise en ligne. Lui proposer le rapport visuel de la dernière comparaison, avec son chemin : c'est la preuve qu'il peut montrer.
 - Aucun commit, aucun push, aucune mise en ligne sans demande explicite. Après une mise en ligne validée, refaire la comparaison sur le site en ligne (`empreinte.mjs` accepte une adresse publique).
 
 ## Code copié dans plusieurs pages : les morceaux communs
@@ -138,6 +145,9 @@ Le piège le plus coûteux : **chaque page existe alors en deux exemplaires**, l
 - **Mesure dans une iframe** : une iframe qui ne s'affiche pas renvoie des styles périmés (un faux diagnostic de 33 contrastes en échec en est venu). `empreinte.mjs` ouvre une vraie page, une à la fois.
 - **Éléments animés en continu** (bandeau qui défile, compteur) : même neutralisés, ils laissent parfois des écarts de moins de 3 px, dans un sens ou dans l'autre. Les signaler comme tels dans le rapport au lieu de les passer sous silence.
 - **Polices pas encore chargées** : le texte est alors mesuré dans la police de secours, et toutes les largeurs sont fausses (2 693 faux écarts une fois). `empreinte.mjs` attend `document.fonts.ready`.
+- **Capture pleine page d'une appli qui défile à l'intérieur** (fil de cartes en hauteur 100 %) : la capture « au-delà de l'écran » rend visibles toutes les cartes à la fois et déclenche leurs IntersectionObserver. Sur une appli réelle, la carte affichée sautait à la dernière du fil, une visite guidée sautait une bulle, et le scénario s'arrêtait. `empreinte.mjs` capture donc à l'écran quand le document ne dépasse pas l'écran. Un scénario qui s'interrompt signale souvent un outil qui modifie ce qu'il mesure : rejouer l'étape seule, sans capture, puis avec, avant d'accuser la page.
+- **Images de fond dans le style calculé** : une image écrite en chemin relatif se lit en adresse complète, port du serveur de test compris, et ce port change à chaque lancement. Sur une appli réelle, la double mesure à vide sortait tous les états en écart. `empreinte.mjs` retire donc l'adresse du serveur des valeurs relevées.
+- **Photos redimensionnées** : elles ne se décodent pas toujours au même niveau près d'une mesure à l'autre (jusqu'à 22 sur 255 relevé). `empreinte.mjs` ne compte comme écart qu'un pixel qui change de plus de 40 sur 255 (`--seuil-pixel`) ; le reste est signalé comme « bruit de rendu », jamais caché. Dans le scénario, attendre que les images affichées soient décodées et que l'écran soit immobile avant chaque capture.
 - **Décisions actées déguisées en dette** : du CSS écrit dans chaque page plutôt que dans une feuille commune, un petit script en tête de page qui semble faire doublon. Chercher la raison dans la documentation du projet avant de « corriger » ce qui ressemble à une duplication.
 - **PowerShell sous Windows** écrit par défaut en UTF-16 et casse les accents : écrire les fichiers avec les outils d'édition, pas avec le shell.
 

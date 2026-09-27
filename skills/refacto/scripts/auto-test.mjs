@@ -52,6 +52,7 @@ const suffixe = "ouvert"; const etat = "etat-" + suffixe;
 document.getElementById('menu-bouton').addEventListener('click', basculer);
 </script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Person","name":"Test"}</script>
+<button id="effacer" type="button">Tout effacer</button>
 </body></html>
 `;
 ecrire("site/index.html", PAGE);
@@ -87,6 +88,7 @@ verifier(/Inventaire de 3 fichier/.test(r.texte), "code mort : --exclure écarte
 // 3. Empreinte d'une page : stable, insensible à un rangement neutre, sensible à 2 px de marge
 r = lancer("empreinte.mjs", ["site/index.html", "ref.json", "--etats", "etats.mjs"]);
 verifier(r.code === 0 && /8 états \(375, 1440 px ; clair, sombre\)/.test(r.texte), "empreinte : 2 états x 2 largeurs x 2 thèmes enregistrés (thème sombre détecté seul)");
+verifier(/page : [1-9]\d* requête\(s\), [\d,]+ Ko compressés, [\d,]+ Ko bruts/.test(r.texte), "poids : requêtes, poids compressé et poids brut relevés au chargement");
 r = lancer("empreinte.mjs", ["site/index.html", "ref.json", "--etats", "etats.mjs"]);
 verifier(r.code === 0 && /identiques/.test(r.texte), "empreinte : deux mesures à vide sont identiques (mesure stable)");
 const range = PAGE
@@ -96,13 +98,31 @@ const range = PAGE
   .replace("function jamaisAppelee(){ return 1; }\n", "");
 ecrire("site/index.html", range);
 r = lancer("empreinte.mjs", ["site/index.html", "ref.json", "--etats", "etats.mjs"]);
-verifier(r.code === 0 && /identiques \(DOM, styles, focus, pixels\)/.test(r.texte), "empreinte : un rangement sans effet visible est reconnu identique");
+verifier(r.code === 0 && /identiques \(DOM, styles, accessibilité, focus, pixels\)/.test(r.texte), "empreinte : un rangement sans effet visible est reconnu identique");
+verifier(/avant : \d+ requête\(s\), [\d,]+ Ko compressés \((identique|[+-]?[\d,]+ %)\)/.test(r.texte), "poids : la comparaison donne le poids d'avant et la variation");
 ecrire("site/index.html", range.replace("padding:8px 12px", "padding:8px 14px"));
 r = lancer("empreinte.mjs", ["site/index.html", "ref.json", "--etats", "etats.mjs"]);
 verifier(r.code === 1 && /padding : 8px 12px -> 8px 14px/.test(r.texte) && /pixel\(s\) différent\(s\)/.test(r.texte), "empreinte : 2 px de marge en plus sont vus, dans les styles et dans les pixels");
+const rapport = fs.existsSync(path.join(T, "ref.rapport.html")) ? fs.readFileSync(path.join(T, "ref.rapport.html"), "utf8") : "";
+const imagesEcarts = fs.existsSync(path.join(T, "ref.ecarts")) ? fs.readdirSync(path.join(T, "ref.ecarts")).length : 0;
+verifier(/États avec écart/.test(rapport) && /alt="Différences"/.test(rapport) && imagesEcarts > 0, "rapport : page écrite, avec les captures avant, après et l'image des différences");
 ecrire("site/index.html", range.replace('class="bouton">Menu', 'class="bouton">Menu ').replace("</nav>", "</nav><p hidden>x</p>"));
 r = lancer("empreinte.mjs", ["site/index.html", "ref.json", "--etats", "etats.mjs", "--sans-captures"]);
 verifier(r.code === 1 && /DOM, premier écart/.test(r.texte), "empreinte : un changement du DOM invisible à l'oeil est vu");
+ecrire("site/index.html", range.replace('class="bouton">Menu', 'class="bouton" aria-label="Ouvrir le menu">Menu'));
+r = lancer("empreinte.mjs", ["site/index.html", "ref.json", "--etats", "etats.mjs", "--sans-captures"]);
+verifier(r.code === 1 && /accessibilité, disparu : button "Menu"/.test(r.texte) && /accessibilité, apparu : button "Ouvrir le menu"/.test(r.texte), "accessibilité : un nom de bouton changé pour les lecteurs d'écran est vu");
+
+// 3 bis. Exploration : un défaut qui n'existe que menu ouvert échappe à une mesure sans scénario, pas à --explorer
+ecrire("site/index.html", PAGE);
+r = lancer("empreinte.mjs", ["site/index.html", "explo-sans.json", "--sans-captures", "--largeurs", "375"]);
+r = lancer("empreinte.mjs", ["site/index.html", "explo.json", "--explorer", "--sans-captures", "--largeurs", "375"]);
+verifier(r.code === 0 && /button#effacer « Tout effacer » \(action destructive\)/.test(r.texte), "exploration : un bouton destructif n'est jamais cliqué, et il est signalé");
+ecrire("site/index.html", PAGE.replace("classList.toggle('ouvert')", "classList.toggle('ouverte')"));
+r = lancer("empreinte.mjs", ["site/index.html", "explo-sans.json", "--sans-captures", "--largeurs", "375"]);
+verifier(r.code === 0, "exploration : sans elle, le menu cassé passe inaperçu (limite connue d'un scénario incomplet)");
+r = lancer("empreinte.mjs", ["site/index.html", "explo.json", "--explorer", "--sans-captures", "--largeurs", "375"]);
+verifier(r.code === 1 && /ÉCART ouvert : button#menu-bouton « Menu »/.test(r.texte), "exploration : avec elle, le menu cassé est vu dans l'état « menu ouvert »");
 
 // 4. Empreinte du site entier
 ecrire("site/index.html", PAGE);

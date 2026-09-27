@@ -3,6 +3,8 @@
 // Le scénario est rejoué à l'identique avant et après la refactorisation, pour chaque largeur et chaque thème.
 // Règle : capturer chaque état que l'utilisateur peut voir (menu ouvert, onglet, feuille, message d'erreur, formulaire
 // rempli), pas seulement l'arrivée sur la page. Un état non capturé est un état non protégé.
+// L'option --explorer ouvre déjà seule chaque bouton, onglet et menu déroulant, un par un : ce scénario sert surtout
+// aux états à plusieurs étapes (formulaire rempli puis envoyé, parcours complet, préparation avant chargement).
 
 // Facultatif : exécuté avant le chargement de la page (clés de stockage, écran d'ouverture à sauter...)
 export async function preparer(page) {
