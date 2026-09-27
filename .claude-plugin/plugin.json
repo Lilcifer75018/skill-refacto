@@ -7,8 +7,8 @@
     "name": "Lilian Barty-Christophe",
     "url": "https://www.lilian-barty.fr/"
   },
-  "homepage": "https://github.com/Lilcifer75018/skill-refacto",
-  "repository": "https://github.com/Lilcifer75018/skill-refacto",
+  "homepage": "https://github.com/lilian-barty/skill-refacto",
+  "repository": "https://github.com/lilian-barty/skill-refacto",
   "license": "MIT",
   "keywords": ["refactoring", "refactorisation", "html", "css", "javascript", "visual-regression", "claude-code", "skill"]
 }

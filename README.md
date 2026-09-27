@@ -172,7 +172,7 @@ npm install -g puppeteer
 ### Par le gestionnaire de plugins de Claude Code
 
 ```
-/plugin marketplace add Lilcifer75018/skill-refacto
+/plugin marketplace add lilian-barty/skill-refacto
 /plugin install refacto@lilian-barty-refacto
 ```
 
