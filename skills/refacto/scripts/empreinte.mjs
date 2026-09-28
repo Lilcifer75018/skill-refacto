@@ -24,6 +24,9 @@
 //   --largeurs 375,1440    largeurs d'écran (défaut 375 et 1440)
 //   --themes clair,sombre  thèmes (défaut : les deux si la page gère le thème sombre, sinon clair)
 //   --garder-animations    ne neutralise pas animations et transitions (déconseillé : rend les captures instables)
+//   --contourner-csp       lève la règle de sécurité de la page (Content-Security-Policy) dans ce navigateur de test,
+//                          quand elle interdit la feuille qui fige animations et curseur (l'outil s'arrête et le dit) ;
+//                          la mesure ne voit plus alors ce que cette règle bloquerait en ligne
 //   --sans-captures        ne fait pas de captures (plus rapide, compare DOM, styles et accessibilité seulement)
 //   --seuil-pixel 40       écart de couleur (sur 255) au-delà duquel un pixel compte comme différent (défaut 40) ;
 //                          en dessous, c'est du bruit de rendu (photo redimensionnée), signalé en note, jamais caché
@@ -71,6 +74,8 @@ const dossierEcarts = base + ".ecarts";
 const fichierRapport = base + ".rapport.html";
 const avecCaptures = !drapeau("sans-captures");
 const explorer = drapeau("explorer");
+const contournerCsp = drapeau("contourner-csp");
+const NOTE_CSP = "Règle de sécurité de la page (Content-Security-Policy) levée pendant la mesure (--contourner-csp) : un changement qu'elle bloquerait en ligne, comme un style ou un script écrit dans la page ou une ressource d'un autre domaine, n'est pas vu ici.";
 const MAX_ETATS = Number(option("max-etats", "25"));
 if (avecCaptures) fs.mkdirSync(dossierCaptures, { recursive: true });
 
@@ -132,7 +137,13 @@ if (fichierEtats) {
   preparerPage = m.preparer || null;
 }
 
-const NEUTRALISER = "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}";
+// Animations, transitions et curseur de saisie figés, dans une couche CSS déclarée la première (la feuille est placée en
+// tête du <head>) : pour une règle !important, la première couche déclarée l'emporte sur toutes les autres et sur le CSS
+// hors couche. Hors couche, elle perdait contre le « mouvement réduit » d'une appli Tailwind v4 (1 ms !important dans
+// @layer base) et contre toute règle !important plus précise que « * ». La durée tombe à zéro, mais l'animation garde
+// son nom pour finir sur son image de fin : animation-name:none laisserait invisible un élément qui n'apparaît que par
+// une animation « forwards » depuis un style de base à opacity:0.
+const NEUTRALISER = "@layer refacto-neutraliser{*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}}";
 const PROPRIETES = ["display", "visibility", "position", "top", "right", "bottom", "left", "z-index", "box-sizing", "margin", "padding", "border", "border-radius", "outline", "color", "background-color", "background-image", "opacity", "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-transform", "text-decoration-line", "white-space", "overflow", "flex-direction", "flex-wrap", "justify-content", "align-items", "gap", "grid-template-columns", "grid-template-rows", "transform", "filter", "box-shadow", "cursor", "object-fit", "aspect-ratio"];
 
 function releverDansPage(proprietes) {
@@ -239,7 +250,16 @@ function surveillerChargement(p) {
   };
 }
 
-async function capturerEtat(p, cleEtat) {
+async function capturerEtat(p, cleEtat, { garderSouris = false } = {}) {
+  if (await p.evaluate(() => window.__refactoNeutralisation === "bloquee")) {
+    console.log(`${cleEtat} : la règle de sécurité de la page (Content-Security-Policy) interdit la feuille qui fige animations et curseur de saisie, les captures ne seraient pas stables. Relancer avec --contourner-csp (le SKILL.md dit ce que la mesure ne voit plus alors). Mesure arrêtée, référence non modifiée.`);
+    await navigateur.close();
+    if (serveur) await serveur.fermer();
+    process.exit(2);
+  }
+  // La souris laissée par un clic du scénario survolerait l'élément qui prend sa place sur l'écran suivant, selon le
+  // moment où le navigateur recalcule le survol : elle repart dans le coin. Un survol voulu : { garderSouris: true }
+  if (!garderSouris) await p.mouse.move(0, 0);
   await pause(300);
   etats[cleEtat] = await p.evaluate(releverDansPage, PROPRIETES);
   try { etats[cleEtat].a11y = aplatir(await p.accessibility.snapshot({ interestingOnly: true })).join("\n"); }
@@ -266,10 +286,15 @@ for (const { nom: nomPage, adresse } of pages) {
       const ctx = await navigateur.createBrowserContext();
       const p = await ctx.newPage();
       p.on("pageerror", (e) => erreurs.push(`${prefixe}${combinaison} : ${e.message}`));
+      // Avant tout chargement : la règle de sécurité se lit à l'arrivée sur la page
+      if (contournerCsp) await p.setBypassCSP(true);
       const mobile = largeur < 768;
       await p.setViewport({ width: largeur, height: hauteurPour(largeur), deviceScaleFactor: 1, isMobile: mobile, hasTouch: mobile });
       await p.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme === "sombre" ? "dark" : "light" }, { name: "prefers-reduced-motion", value: "reduce" }]);
-      if (!drapeau("garder-animations")) await p.evaluateOnNewDocument((css) => { document.addEventListener("DOMContentLoaded", () => { const s = document.createElement("style"); s.textContent = css; document.head.appendChild(s); }); }, NEUTRALISER);
+      // En tête du <head>, pour que la couche de NEUTRALISER soit la première déclarée (la feuille devient
+      // document.styleSheets[0]). Une règle de sécurité qui interdit les styles écrits dans la page la bloque : c'est
+      // noté, et capturerEtat arrête la mesure au lieu de relever une page encore animée
+      if (!drapeau("garder-animations")) await p.evaluateOnNewDocument((css) => { document.addEventListener("DOMContentLoaded", () => { const s = document.createElement("style"); s.textContent = css; document.head.prepend(s); window.__refactoNeutralisation = s.sheet ? "active" : "bloquee"; }); }, NEUTRALISER);
       if (preparerPage) await preparerPage(p);
       const finChargement = surveillerChargement(p);
       await p.goto(adresse, { waitUntil: "networkidle0" });
@@ -279,7 +304,7 @@ for (const { nom: nomPage, adresse } of pages) {
       await pause(400);
       const outils = {
         pause,
-        capturer: (nom) => capturerEtat(p, `${prefixe}${nom} @ ${combinaison}`),
+        capturer: (nom, options) => capturerEtat(p, `${prefixe}${nom} @ ${combinaison}`, options),
         clic: (sel) => p.evaluate((s) => { const e = document.querySelector(s); if (!e) throw new Error("introuvable : " + s); e.click(); }, sel),
         saisir: (sel, valeur) => p.evaluate((s, v) => { const e = document.querySelector(s); if (!e) throw new Error("introuvable : " + s); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); e.dispatchEvent(new Event("change", { bubbles: true })); }, sel, valeur),
         touche: async (t) => { await p.keyboard.press(t); await pause(200); },
@@ -390,6 +415,7 @@ const noms = Object.keys(etats);
 if (!comparer) {
   fs.writeFileSync(reference, JSON.stringify({ pages: pages.map((x) => x.nom || x.adresse), largeurs, themes, date: new Date().toISOString(), etats, mesures }));
   console.log(`Empreinte enregistrée : ${noms.length} états (${largeurs.join(", ")} px ; ${themes.join(", ")}) dans ${reference}`);
+  if (contournerCsp) console.log(NOTE_CSP);
   if (avecCaptures) console.log(`Captures : ${dossierCaptures}`);
   console.log(`Poids et vitesse (${largeurs[0]} px, ${themes[0]}) :\n   - ` + tableauPoids(null).map((l) => l.texte).join("\n   - "));
   if (ecartesExploration.size) console.log(`Exploration, non ouverts :\n   - ` + [...ecartesExploration].join("\n   - "));
@@ -443,6 +469,7 @@ if (!comparer) {
   const poids = tableauPoids(refFichier.mesures || null);
   console.log(`\nPoids et vitesse (${largeurs[0]} px, ${themes[0]}), à titre d'information, jamais compté comme écart :\n   - ` + poids.map((l) => l.texte).join("\n   - "));
   if (ecartesExploration.size) console.log(`Exploration, non ouverts :\n   - ` + [...ecartesExploration].join("\n   - "));
+  if (contournerCsp) console.log(NOTE_CSP);
   console.log(`\n${noms.length} états comparés à ${reference} : ${ecarts ? ecarts + " état(s) avec écart" : "identiques (DOM, styles, accessibilité, focus" + (avecCaptures ? ", pixels)" : ")")}`);
   ecrireRapport(resultats, ecarts, bruits, poids);
   console.log(`Rapport visuel : ${fichierRapport}`);
@@ -512,6 +539,7 @@ details li{word-break:break-word}
   <div><strong>${largeurs.join(" et ")} px</strong>thème ${esc(themes.join(" et "))}</div>
 </div>
 <p class="verdict ${ecarts ? "ko" : "ok"}">${ecarts ? `${ecarts} état(s) diffèrent de la référence : détail ci-dessous.` : "Tout est identique à la référence : structure, styles, accessibilité, focus" + (avecCaptures ? " et pixels." : ".")}</p>
+${contournerCsp ? `<p class="note">${esc(NOTE_CSP)}</p>` : ""}
 ${avecEcart.length ? `<h2>États avec écart</h2>\n${cartes}` : ""}
 <h2>Poids et vitesse</h2>
 <p class="note">Mesurés au chargement, à ${largeurs[0]} px en thème ${esc(themes[0])}. Poids compressé recalculé en gzip. Les temps mesurés en local sont indicatifs. Ces chiffres ne comptent jamais comme un écart.</p>

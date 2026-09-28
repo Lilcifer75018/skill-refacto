@@ -1,5 +1,13 @@
 # Versions
 
+## 1.2.0, le 28 septembre 2026
+
+- Animations neutralisées aussi sur les pages qui rangent leurs règles dans des couches CSS : la feuille de neutralisation passe dans une couche déclarée la première. Jusqu'ici, le « mouvement réduit » d'une appli Tailwind v4 l'emportait.
+- Règle de sécurité stricte (Content-Security-Policy) : quand elle bloque la neutralisation, la mesure s'arrête et le dit, au lieu de produire des captures instables. Nouvelle option `--contourner-csp` pour lever la règle dans le navigateur de test.
+- Souris ramenée dans un coin avant chaque relevé : un clic du scénario ne laisse plus de survol sur l'écran suivant. `capturer(nom, { garderSouris: true })` conserve un survol voulu.
+- Auto-test : 36 contrôles.
+- Une référence enregistrée avec une version antérieure peut montrer des écarts de survol ou d'animation : l'enregistrer à nouveau avant de commencer.
+
 ## 1.1.0, le 27 septembre 2026
 
 - Exploration automatique (`--explorer`) : chaque bouton, onglet, menu déroulant et lien interne est ouvert et capturé, sans jamais cliquer une action destructive ni un envoi de formulaire.

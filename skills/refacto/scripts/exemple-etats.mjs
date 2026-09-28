@@ -5,6 +5,8 @@
 // rempli), pas seulement l'arrivée sur la page. Un état non capturé est un état non protégé.
 // L'option --explorer ouvre déjà seule chaque bouton, onglet et menu déroulant, un par un : ce scénario sert surtout
 // aux états à plusieurs étapes (formulaire rempli puis envoyé, parcours complet, préparation avant chargement).
+// Avant chaque capture, la souris est ramenée dans le coin supérieur gauche : un clic du scénario (page.click) ne
+// laisse pas de survol sur l'écran suivant. Pour capturer un survol voulu : capturer(nom, { garderSouris: true }).
 
 // Facultatif : exécuté avant le chargement de la page (clés de stockage, écran d'ouverture à sauter...)
 export async function preparer(page) {
@@ -27,6 +29,9 @@ export default async function (page, { capturer, clic, saisir, touche, defiler, 
     await clic("form [type=submit]"); await capturer("formulaire-erreur");
     await saisir("form input[type=email]", "test@exemple.fr"); await capturer("formulaire-rempli");
   }
+
+  // Un menu qui s'ouvre au survol, sur ordinateur : la souris reste sur lui pendant la capture
+  if (largeur >= 1024 && await page.$("#menu-survol")) { await page.hover("#menu-survol"); await capturer("menu-survole", { garderSouris: true }); }
 
   // Une section plus bas dans la page
   if (await page.$("#tarifs")) { await defiler("#tarifs"); await capturer("tarifs"); }

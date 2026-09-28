@@ -124,6 +124,51 @@ verifier(r.code === 0, "exploration : sans elle, le menu cassé passe inaperçu 
 r = lancer("empreinte.mjs", ["site/index.html", "explo.json", "--explorer", "--sans-captures", "--largeurs", "375"]);
 verifier(r.code === 1 && /ÉCART ouvert : button#menu-bouton « Menu »/.test(r.texte), "exploration : avec elle, le menu cassé est vu dans l'état « menu ouvert »");
 
+// 3 ter. Neutralisation : animations figées malgré une couche CSS ou une règle de sécurité, souris sans survol.
+// Le scénario affiche le style calculé relevé par le navigateur de mesure.
+const ANIMS = ".anim{animation:tourne 3s infinite}.trans{transition:opacity 2s}.apparait{opacity:0;animation:apparait 2s forwards}@keyframes tourne{to{transform:rotate(1turn)}}@keyframes apparait{to{opacity:1}}";
+const NEUTRE = (tete) => `<!doctype html><html lang="fr"><head><meta charset="utf-8">${tete}<title>Neutre</title></head><body>
+<div class="anim">Tourne</div><div class="trans">Glisse</div><div class="apparait">Apparaît</div><input id="champ" aria-label="Champ">
+</body></html>
+`;
+ecrire("neutre/couche.html", NEUTRE(`<style>@layer base{@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;transition-duration:1ms!important}}}${ANIMS}</style>`));
+ecrire("neutre/sans-couche.html", NEUTRE(`<style>${ANIMS}.anim{animation-duration:5s!important}</style>`));
+ecrire("neutre/csp.html", NEUTRE(`<meta http-equiv="Content-Security-Policy" content="style-src 'self'"><link rel="stylesheet" href="csp.css">`));
+ecrire("neutre/csp.css", ANIMS);
+ecrire("etats-neutre.mjs", `export default async function (page, { capturer }) {
+  await capturer("chargement");
+  console.log(await page.evaluate(() => { const s = (q) => getComputedStyle(document.querySelector(q)); return "relevé : animation " + s(".anim").animationDuration + ", transition " + s(".trans").transitionDuration + ", fin d'animation " + s(".apparait").opacity + ", curseur " + s("#champ").caretColor; }));
+}
+`);
+const FIGEE = /relevé : animation 0s, transition 0s, fin d'animation 1, curseur rgba\(0, 0, 0, 0\)/;
+const neutre = (nom, ...options) => lancer("empreinte.mjs", [`neutre/${nom}.html`, `neutre-${nom}.json`, "--etats", "etats-neutre.mjs", "--sans-captures", "--largeurs", "375", "--themes", "clair", ...options]);
+r = neutre("couche");
+verifier(r.code === 0 && /relevé : animation 0s, transition 0s/.test(r.texte), "neutralisation : une règle !important rangée dans une couche CSS (mouvement réduit de Tailwind v4) est battue");
+verifier(/fin d'animation 1,/.test(r.texte), "neutralisation : une animation « forwards » finit sur son image de fin (animation-name:none la laisserait invisible)");
+r = neutre("sans-couche");
+verifier(r.code === 0 && FIGEE.test(r.texte), "neutralisation : une page sans couche reste figée, même contre une règle !important plus précise que « * »");
+r = neutre("csp");
+verifier(r.code === 2 && /--contourner-csp/.test(r.texte) && !fs.existsSync(path.join(T, "neutre-csp.json")), "sécurité : une règle qui interdit les styles ajoutés (CSP) arrête la mesure sans écrire de référence, et dit quelle option prendre");
+r = neutre("csp", "--contourner-csp");
+verifier(r.code === 0 && FIGEE.test(r.texte) && /levée pendant la mesure/.test(r.texte), "sécurité : avec --contourner-csp, la même page est figée, et la mesure dit ce qu'elle ne voit plus");
+ecrire("souris/index.html", `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Souris</title><style>
+body{margin:0;padding:40px;font-family:sans-serif}
+#a,#b{position:absolute;left:40px;top:40px;width:200px;height:60px;border:0;background:rgb(0,0,255);color:#fff}
+#b:hover{background:rgb(255,0,0)}
+</style></head><body><div id="a">Commencer</div><button id="b" hidden>Suite</button>
+<script>document.getElementById("a").addEventListener("click", () => { document.getElementById("a").hidden = true; document.getElementById("b").hidden = false; });</script>
+</body></html>
+`);
+ecrire("etats-souris-clic.mjs", `export default async function (page, { capturer }) { await page.click("#a"); await capturer("suite"); }\n`);
+ecrire("etats-souris-programme.mjs", `export default async function (page, { capturer, clic }) { await clic("#a"); await capturer("suite"); }\n`);
+ecrire("etats-souris-survol.mjs", `export default async function (page, { capturer, clic }) { await clic("#a"); await page.hover("#b"); await capturer("suite", { garderSouris: true }); }\n`);
+const souris = (etats) => lancer("empreinte.mjs", ["souris/index.html", "souris.json", "--etats", etats, "--largeurs", "1440"]);
+r = souris("etats-souris-clic.mjs");
+r = souris("etats-souris-programme.mjs");
+verifier(r.code === 0 && /identiques \(DOM, styles, accessibilité, focus, pixels\)/.test(r.texte), "souris : celle laissée par un clic ne survole pas l'écran suivant (clic à la souris et clic par programme, même empreinte)");
+r = souris("etats-souris-survol.mjs");
+verifier(r.code === 1 && /background-color : rgb\(0, 0, 255\) -> rgb\(255, 0, 0\)/.test(r.texte), "souris : un survol voulu se capture avec { garderSouris: true }");
+
 // 4. Empreinte du site entier
 ecrire("site/index.html", PAGE);
 r = lancer("empreinte.mjs", ["site", "site.json", "--toutes-pages", "--sans-captures", "--largeurs", "375"]);

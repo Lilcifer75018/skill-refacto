@@ -64,7 +64,7 @@ Chaque relevé est répété dans toutes les combinaisons suivantes :
 
 Soit quatre relevés pour chaque état de chaque page. Les largeurs se règlent avec l'option `--largeurs`. Le thème sombre n'est mesuré que si la page le prend en charge ; le skill le détecte seul.
 
-Pour que deux mesures successives soient comparables, les animations et transitions sont neutralisées, et le relevé attend le chargement complet des polices. Le skill mesure d'ailleurs la page deux fois avant toute modification : si ces deux mesures diffèrent, la page n'est pas stable et la source d'instabilité est traitée avant de commencer. Les très faibles variations de couleur, typiques d'une photo redimensionnée, sont signalées comme « bruit de rendu » sans compter comme un écart.
+Pour que deux mesures successives soient comparables, les animations, les transitions et le curseur de saisie sont neutralisés, et le relevé attend le chargement complet des polices. La souris est ramenée dans un coin avant chaque relevé : un bouton resté sous le pointeur après un clic fausserait la capture suivante. Le skill mesure d'ailleurs la page deux fois avant toute modification : si ces deux mesures diffèrent, la page n'est pas stable et la source d'instabilité est traitée avant de commencer. Les très faibles variations de couleur, typiques d'une photo redimensionnée, sont signalées comme « bruit de rendu » sans compter comme un écart.
 
 ### Exemple : une marge modifiée
 
@@ -137,7 +137,7 @@ Le skill s'appuie sur cinq scripts Node, dans `skills/refacto/scripts/`. Ils fon
 | `sorties.mjs` | Pour un script (construction de site, export) : compare le code de sortie, le texte affiché et les fichiers produits, à l'octet près | `node sorties.mjs reference.json --commande "node build.mjs" --produit dist` |
 | `verifier-syntaxe.mjs` | Vérifie la syntaxe des fichiers JavaScript, des scripts écrits dans les pages HTML, des blocs JSON-LD, des fichiers JSON et Python | `node verifier-syntaxe.mjs mon-projet/` |
 | `code-mort.mjs` | Liste les suspects : classes CSS jamais utilisées, variables et animations inutilisées, déclarations en double, fonctions jamais appelées, fichiers orphelins | `node code-mort.mjs mon-projet/ --exclure dist` |
-| `auto-test.mjs` | Vérifie que les quatre outils précédents fonctionnent sur votre machine (29 contrôles sur un site de test) | `node auto-test.mjs` |
+| `auto-test.mjs` | Vérifie que les quatre outils précédents fonctionnent sur votre machine (36 contrôles sur un site de test) | `node auto-test.mjs` |
 
 `empreinte.mjs` et `sorties.mjs` suivent la même logique : au premier lancement, la référence est enregistrée ; aux lancements suivants, la mesure est comparée à cette référence. Le code de sortie vaut 0 si tout est identique et 1 sinon, ce qui permet de les utiliser dans une chaîne d'intégration continue.
 
@@ -154,6 +154,7 @@ Principales options d'`empreinte.mjs` :
 | `--themes clair,sombre` | Choisit les thèmes, au lieu de la détection automatique |
 | `--sans-captures` | Compare sans captures, plus rapidement ; le rapport visuel est alors sans images |
 | `--seuil-pixel 40` | Écart de couleur, sur 255, à partir duquel un pixel compte comme modifié |
+| `--contourner-csp` | Lève la règle de sécurité de la page (Content-Security-Policy) dans le navigateur de test, quand elle empêche de neutraliser les animations. L'outil signale de lui-même quand l'option est nécessaire (voir les limites) |
 
 Le skill comprend aussi une grille de lecture par langage (`references/catalogue.md`) : HTML, CSS, JavaScript, scripts Node et Python, nœuds Code de n8n. Pour chaque situation, elle indique quoi faire, dans quelle famille la classer, et le piège à éviter.
 
@@ -188,7 +189,7 @@ Copiez le dossier `skills/refacto` dans `~/.claude/skills/`.
 node ~/.claude/skills/refacto/scripts/auto-test.mjs
 ```
 
-Le résultat attendu est « 29 contrôles, 0 échec(s) ». Après une installation par plugin, le script se trouve dans `~/.claude/plugins/cache/lilian-barty-refacto/refacto/<version>/skills/refacto/scripts/`.
+Le résultat attendu est « 36 contrôles, 0 échec(s) ». Après une installation par plugin, le script se trouve dans `~/.claude/plugins/cache/lilian-barty-refacto/refacto/<version>/skills/refacto/scripts/`.
 
 ## Utilisation
 
@@ -212,6 +213,7 @@ Le skill couvre les pages HTML, les sites statiques, les petites applications we
 - La preuve couvre les états ouverts par l'exploration automatique et ceux décrits dans le scénario. Un état qui demande plusieurs actions et qui ne figure pas dans le scénario n'est pas protégé.
 - Sur un site de plusieurs dizaines de pages, l'exploration rallonge nettement la mesure : la limiter avec `--max-etats` et `--largeurs`, ou la réserver aux pages interactives.
 - Les éléments animés en continu (bandeau qui défile, compteur) peuvent laisser des écarts de moins de 3 pixels. Ils sont signalés comme tels dans le rapport.
+- Une page protégée par une règle de sécurité stricte (Content-Security-Policy) se mesure avec l'option `--contourner-csp`, qui lève cette règle dans le navigateur de test. Un changement que la règle bloquerait en ligne, comme un style ou un script écrit dans la page, échappe alors à la mesure : il se vérifie dans le code modifié et par les tests du projet.
 - Les temps d'affichage mesurés sur votre machine sont indicatifs et ne remplacent pas une mesure en conditions réelles.
 - Le skill fonctionne dans Claude Code, sur votre machine. Il ne fonctionne pas dans l'application Claude sur le web, qui ne dispose ni de Node ni d'un navigateur piloté.
 - Le skill est rédigé en français.
