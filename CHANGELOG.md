@@ -1,5 +1,20 @@
 # Versions
 
+## 1.3.0, le 30 septembre 2026
+
+Audit des outils : chaque correction ferme un cas où un changement pouvait passer inaperçu, ou un cas où l'outil annonçait une vérification qui n'avait pas eu lieu.
+
+- Captures : deux états dont le nom ne diffère que par un symbole (« + » et « − ») écrivaient la même image. Chaque état a désormais son fichier.
+- Styles : 69 propriétés relevées au lieu de 42, dont les bordures côté par côté et `pointer-events`. Une ancienne référence se compare avec sa propre liste, et l'outil dit ce qu'elle ne couvre pas.
+- Bilan : il ne cite que ce qui a été comparé. Une référence sans captures n'est plus annoncée identique aux pixels.
+- Erreurs JavaScript : enregistrées avec la référence. Une erreur déjà présente ne fait plus échouer la comparaison, une erreur apparue ou disparue est un écart.
+- Exploration : stockage vidé entre deux éléments, IndexedDB comprise, et envois de données bloqués.
+- `sorties.mjs` : un fichier que la commande n'écrit plus, resté sur le disque, est signalé.
+- `code-mort.mjs` : règle suivant un `@import` et règles imbriquées lues, fichiers TypeScript et JSX pris en compte.
+- `verifier-syntaxe.mjs` : les fichiers qu'il ne sait pas lire sont comptés et signalés, `python3` est essayé, les cartes d'import sont contrôlées.
+- Auto-test : 49 contrôles.
+- Les références enregistrées avec une version antérieure sont à enregistrer à nouveau pour profiter de ces contrôles.
+
 ## 1.2.0, le 28 septembre 2026
 
 - Animations neutralisées aussi sur les pages qui rangent leurs règles dans des couches CSS : la feuille de neutralisation passe dans une couche déclarée la première. Jusqu'ici, le « mouvement réduit » d'une appli Tailwind v4 l'emportait.

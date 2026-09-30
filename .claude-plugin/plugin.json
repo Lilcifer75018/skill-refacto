@@ -1,7 +1,7 @@
 {
   "name": "refacto",
   "displayName": "Skill refacto",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Refactoriser avec Claude sans rien casser : une empreinte de la page avant et après chaque changement, comparée au pixel près, sur téléphone et ordinateur, en clair et en sombre.",
   "author": {
     "name": "Lilian Barty-Christophe",

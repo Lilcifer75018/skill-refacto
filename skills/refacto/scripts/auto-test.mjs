@@ -187,6 +187,87 @@ ecrire("build.mjs", fs.readFileSync(path.join(T, "build.mjs"), "utf8").replace("
 r = lancer("sorties.mjs", ["sorties.json", "--commande", "node build.mjs", "--produit", "dist"]);
 verifier(r.code === 1 && /dist.a\.txt : contenu différent/.test(r.texte), "sorties : un fichier produit différent est vu");
 
+// 6. Angles morts trouvés à l'audit du 30/09/2026 : chacun laissait passer un changement, ou annonçait une preuve
+// qui n'avait pas eu lieu
+const page = (titre, tete, corps) => `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${titre}</title>${tete}</head><body>\n${corps}\n</body></html>\n`;
+const mesurer = (cible, ref, ...options) => lancer("empreinte.mjs", [cible, ref, "--largeurs", "375", "--themes", "clair", ...options]);
+
+const PROPS = (plus) => page("Props", `<style>.carte{border:1px solid #c33;border-bottom:3px solid #222;padding:8px}.bouton{padding:8px}${plus}</style>`, `<div class="carte">Carte</div><button class="bouton">Agir</button>`);
+ecrire("props/index.html", PROPS(""));
+r = mesurer("props/index.html", "props.json", "--sans-captures");
+ecrire("props/index.html", PROPS(".carte{border-bottom-color:#225}.bouton{pointer-events:none}"));
+r = mesurer("props/index.html", "props.json", "--sans-captures");
+verifier(r.code === 1 && /border-bottom : 3px solid rgb\(34, 34, 34\) -> 3px solid rgb\(34, 34, 85\)/.test(r.texte) && /pointer-events : auto -> none/.test(r.texte), "styles : une bordure changée d'un seul côté et un bouton devenu incliquable sont vus sans captures");
+ecrire("props/index.html", PROPS(""));
+r = mesurer("props/index.html", "props.json");
+verifier(r.code === 0 && /Pixels NON comparés/.test(r.texte) && /identiques \(DOM, styles, accessibilité, focus\)/.test(r.texte), "bilan : une référence sans captures n'est jamais annoncée identique « aux pixels »");
+const ancienne = JSON.parse(fs.readFileSync(path.join(T, "props.json"), "utf8"));
+for (const e of Object.values(ancienne.etats)) for (const s of Object.values(e.styles)) delete s["pointer-events"];
+fs.writeFileSync(path.join(T, "props.json"), JSON.stringify(ancienne));
+r = mesurer("props/index.html", "props.json", "--sans-captures");
+verifier(r.code === 0 && /1 propriété\(s\) de style ne sont pas comparées \(pointer-events\)/.test(r.texte), "styles : une référence d'une version antérieure se compare sans faux écart, et l'outil dit ce qu'elle ne couvre pas");
+
+const DESSIN = (couleur) => `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="${couleur}"/></svg>`;
+ecrire("jumeaux/index.html", page("Jumeaux", `<style>.p{display:none}.p.o{display:block}</style>`, `<button>+</button><button>−</button>
+<div class="p"><img src="dessin.svg" width="100" height="100" alt=""></div><div class="p">Moins</div>
+<script>document.querySelectorAll("button").forEach((b, i) => b.addEventListener("click", () => document.querySelectorAll(".p")[i].classList.add("o")));</script>`));
+ecrire("jumeaux/dessin.svg", DESSIN("#c33"));
+r = mesurer("jumeaux/index.html", "jumeaux.json", "--explorer");
+ecrire("jumeaux/dessin.svg", DESSIN("#33c"));
+r = mesurer("jumeaux/index.html", "jumeaux.json", "--explorer");
+verifier(r.code === 1 && /ÉCART ouvert : button « \+ »/.test(r.texte) && /pixel\(s\) différent\(s\)/.test(r.texte), "captures : deux états dont le nom ne diffère que par un symbole (« + » et « − ») gardent chacun leur capture");
+
+ecrire("explo2/index.html", page("Explo", "", `<button id="noter">Noter</button><button id="autre">Autre</button><button id="compter">Compter</button><p id="trace"></p>
+<script>
+const ouvrir = new Promise((ok) => { const q = indexedDB.open("essai", 1); q.onupgradeneeded = () => q.result.createObjectStore("notes"); q.onsuccess = () => ok(q.result); });
+ouvrir.then((b) => { const l = b.transaction("notes").objectStore("notes").get("n"); l.onsuccess = () => { if (l.result) document.getElementById("trace").textContent = "note d'un clic précédent"; }; });
+document.getElementById("noter").addEventListener("click", () => ouvrir.then((b) => b.transaction("notes", "readwrite").objectStore("notes").put(1, "n")));
+document.getElementById("autre").addEventListener("click", (e) => { e.target.textContent = "Autre, ouvert"; });
+document.getElementById("compter").addEventListener("click", () => fetch("compte", { method: "POST" }).catch(() => {}));
+</script>`));
+r = mesurer("explo2/index.html", "explo2.json", "--explorer", "--sans-captures");
+const explo2 = fs.existsSync(path.join(T, "explo2.json")) ? JSON.parse(fs.readFileSync(path.join(T, "explo2.json"), "utf8")).etats : {};
+const autre = explo2["ouvert : button#autre « Autre » @ 375-clair"];
+verifier(r.code === 0 && autre && !/note d'un clic précédent/.test(autre.dom), "exploration : la base IndexedDB est vidée entre deux éléments, un clic ne déteint pas sur l'état suivant");
+verifier(/1 envoi\(s\) de données bloqué\(s\), rien n'est parti \(POST \/compte\)/.test(r.texte), "exploration : un clic qui envoie des données (POST) est bloqué, et dit");
+
+const PANNE = (plus) => page("Panne", "", `<p>Page</p><script>throw new Error("panne d'origine");</script>${plus}`);
+ecrire("panne/index.html", PANNE(""));
+r = mesurer("panne/index.html", "panne.json", "--sans-captures");
+const enregistrement = r;
+r = mesurer("panne/index.html", "panne.json", "--sans-captures");
+verifier(enregistrement.code === 0 && /déjà présentes AVANT/.test(enregistrement.texte) && r.code === 0 && /inchangées/.test(r.texte), "erreurs : une erreur JavaScript déjà là avant refactorisation est signalée, sans faire échouer la comparaison");
+ecrire("panne/index.html", PANNE(`<script>throw new Error("panne nouvelle");</script>`));
+r = mesurer("panne/index.html", "panne.json", "--sans-captures");
+verifier(r.code === 1 && /erreur JavaScript apparue : .*panne nouvelle/.test(r.texte), "erreurs : une erreur JavaScript apparue après coup est un écart");
+
+const BUILD2 = (noms) => `import fs from "node:fs"; fs.mkdirSync("dist2",{recursive:true}); for (const n of ${JSON.stringify(noms)}) fs.writeFileSync("dist2/"+n+".txt", n);\n`;
+ecrire("build2.mjs", BUILD2(["a", "b"]));
+r = lancer("sorties.mjs", ["sorties2.json", "--commande", "node build2.mjs", "--produit", "dist2"]);
+ecrire("build2.mjs", BUILD2(["a"]));
+r = lancer("sorties.mjs", ["sorties2.json", "--commande", "node build2.mjs", "--produit", "dist2"]);
+verifier(r.code === 1 && /dist2.b\.txt : présent, mais pas réécrit/.test(r.texte), "sorties : un fichier que la commande n'écrit plus, resté sur le disque, est vu");
+
+ecrire("mort2/index.html", page("Mort", `<style>@import url("police.css");
+.apres-import{color:red}
+@layer base, composants;
+.apres-layer{color:blue}
+.parent{color:red;.enfant-morte{color:blue}}
+.vue-en-tsx{color:green}</style>`, `<div class="parent">x</div>`));
+ecrire("mort2/appli.tsx", `export const Appli = () => <div className="vue-en-tsx">x</div>;\n`);
+r = lancer("code-mort.mjs", ["mort2", "--pas-de-fichiers"]);
+verifier(/\.apres-import/.test(r.texte) && /\.apres-layer/.test(r.texte) && /\.enfant-morte/.test(r.texte) && !/^- \.parent/m.test(r.texte), "code mort : la règle qui suit un @import ou un « @layer a, b; » et une règle imbriquée sont lues");
+verifier(!/vue-en-tsx/.test(r.texte), "code mort : une classe posée dans un fichier .tsx n'est pas déclarée morte");
+
+ecrire("ts/ok.js", "const a = 1;\n");
+ecrire("ts/a.ts", "const a: number = 1;\n");
+ecrire("ts/b.tsx", "export const B = () => <p>b</p>;\n");
+r = lancer("verifier-syntaxe.mjs", ["ts"]);
+verifier(r.code === 0 && /1 bloc\(s\) de code vérifié\(s\) dans 1 fichier\(s\)/.test(r.texte) && /NON VÉRIFIÉS : 2 fichier\(s\) \.ts, \.tsx/.test(r.texte), "syntaxe : les fichiers que l'outil ne sait pas lire (.ts, .tsx) sont comptés et dits, jamais couverts par « aucune erreur »");
+ecrire("carte/index.html", page("Carte", `<script type="importmap">{ "imports": { "a": "./a.js" }, }</script>`, "<p>x</p>"));
+r = lancer("verifier-syntaxe.mjs", ["carte"]);
+verifier(r.code === 1 && /JSON invalide/.test(r.texte), "syntaxe : une carte d'import (importmap) invalide est trouvée");
+
 fs.rmSync(T, { recursive: true, force: true });
 console.log(`\n${controles} contrôles, ${echecs} échec(s)`);
 process.exitCode = echecs ? 1 : 0;

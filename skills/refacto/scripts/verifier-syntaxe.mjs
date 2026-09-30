@@ -25,6 +25,11 @@ for (const c of cibles) { if (!fs.existsSync(c)) { console.log("Introuvable : " 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "verif-syntaxe-"));
 const problemes = [];
 let verifies = 0;
+// Ce que cet outil ne sait pas lire est compté et dit : « aucune erreur » ne doit jamais couvrir des fichiers non lus
+const NON_LUS = new Set([".ts", ".mts", ".cts", ".tsx", ".jsx", ".vue", ".svelte", ".astro", ".php"]);
+const nonLus = new Map();
+let lus = 0;
+let python = null;
 
 function checkNode(fichier, libelle) {
   const r = spawnSync(process.execPath, ["--check", fichier], { encoding: "utf8" });
@@ -44,11 +49,15 @@ const ligneDe = (texte, index) => texte.slice(0, index).split("\n").length;
 
 for (const f of fichiers) {
   const ext = path.extname(f).toLowerCase();
+  if (NON_LUS.has(ext)) { nonLus.set(ext, (nonLus.get(ext) || 0) + 1); continue; }
+  if ([".js", ".mjs", ".cjs", ".json", ".webmanifest", ".py", ".html", ".htm"].includes(ext)) lus++;
   if ([".js", ".mjs", ".cjs"].includes(ext)) checkNode(f, f);
   else if (ext === ".json" || ext === ".webmanifest") checkJson(fs.readFileSync(f, "utf8").replace(/^﻿/, ""), f);
   else if (ext === ".py") {
     verifies++;
-    const r = spawnSync("python", ["-c", "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read(), sys.argv[1])", f], { encoding: "utf8" });
+    // « python » sous Windows, « python3 » ailleurs : le premier qui répond sert pour tous les fichiers
+    python ??= ["python", "python3"].find((c) => spawnSync(c, ["--version"]).status === 0) || "";
+    const r = python ? spawnSync(python, ["-c", "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read(), sys.argv[1])", f], { encoding: "utf8" }) : { error: true };
     if (r.error) problemes.push(`${f}\n   Python introuvable, fichier non vérifié`);
     else if (r.status !== 0) problemes.push(`${f}\n   ${(r.stderr || "").trim().split(/\r?\n/).slice(-3).join("\n   ")}`);
   } else if (ext === ".html" || ext === ".htm") {
@@ -61,7 +70,7 @@ for (const f of fichiers) {
       n++;
       const type = (attrs.match(/\btype\s*=\s*["']?([^"'\s>]+)/i) || [])[1]?.toLowerCase() || "";
       const libelle = `${f}, script n°${n} (ligne ${ligneDe(html, m.index)})`;
-      if (type.includes("json")) { checkJson(code, libelle); continue; }
+      if (type.includes("json") || type === "importmap" || type === "speculationrules") { checkJson(code, libelle); continue; }
       if (type && !["module", "text/javascript", "application/javascript"].includes(type)) continue; // gabarits, shaders...
       const tmp = path.join(temp, `script-${verifies}${type === "module" ? ".mjs" : ".cjs"}`);
       // Décalage des lignes pour que l'erreur pointe la bonne ligne de la page
@@ -73,5 +82,6 @@ for (const f of fichiers) {
 fs.rmSync(temp, { recursive: true, force: true });
 
 for (const p of problemes) console.log("PROBLÈME " + p);
-console.log(`${verifies} bloc(s) de code vérifié(s) dans ${fichiers.length} fichier(s) : ${problemes.length ? problemes.length + " problème(s)" : "aucune erreur de syntaxe"}`);
+console.log(`${verifies} bloc(s) de code vérifié(s) dans ${lus} fichier(s) : ${problemes.length ? problemes.length + " problème(s)" : "aucune erreur de syntaxe"}`);
+if (nonLus.size) console.log(`NON VÉRIFIÉS : ${[...nonLus.values()].reduce((a, b) => a + b, 0)} fichier(s) ${[...nonLus.keys()].sort().join(", ")}, que cet outil ne lit pas. Les faire contrôler par l'outil du projet (tsc, construction, linter).`);
 process.exitCode = problemes.length ? 1 : 0;

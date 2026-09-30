@@ -76,17 +76,21 @@ const avecCaptures = !drapeau("sans-captures");
 const explorer = drapeau("explorer");
 const contournerCsp = drapeau("contourner-csp");
 const NOTE_CSP = "Règle de sécurité de la page (Content-Security-Policy) levée pendant la mesure (--contourner-csp) : un changement qu'elle bloquerait en ligne, comme un style ou un script écrit dans la page ou une ressource d'un autre domaine, n'est pas vu ici.";
+const NOTE_ENVOIS = () => `Exploration : ${envoisBloques.size} envoi(s) de données bloqué(s), rien n'est parti (${[...envoisBloques].join(" ; ")}). L'état capturé est celui d'un envoi qui échoue.`;
 const MAX_ETATS = Number(option("max-etats", "25"));
-if (avecCaptures) fs.mkdirSync(dossierCaptures, { recursive: true });
+// Les dossiers que l'outil écrit repartent de zéro : une capture d'une mesure précédente n'y traîne pas
+if (avecCaptures) { fs.rmSync(dossierCaptures, { recursive: true, force: true }); fs.mkdirSync(dossierCaptures, { recursive: true }); }
+if (comparer) fs.rmSync(dossierEcarts, { recursive: true, force: true });
 
 // Serveur local : les pages ouvertes en file:// se comportent autrement (modules, fetch, service worker)
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".avif": "image/avif", ".gif": "image/gif", ".woff2": "font/woff2", ".woff": "font/woff", ".ico": "image/x-icon", ".mp4": "video/mp4" };
 async function servir(racine) {
   const serveur = http.createServer((q, r) => {
-    let p = decodeURIComponent(q.url.split("?")[0].split("#")[0]);
+    let p;
+    try { p = decodeURIComponent(q.url.split("?")[0].split("#")[0]); } catch (e) { r.writeHead(400); r.end(); return; }
     if (p.endsWith("/")) p += "index.html";
     const f = path.join(racine, p);
-    if (!f.startsWith(racine) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; }
+    if (!(f + path.sep).startsWith(racine + path.sep) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; }
     r.writeHead(200, { "Content-Type": TYPES[path.extname(f).toLowerCase()] || "application/octet-stream" });
     fs.createReadStream(f).pipe(r);
   });
@@ -144,7 +148,19 @@ if (fichierEtats) {
 // son nom pour finir sur son image de fin : animation-name:none laisserait invisible un élément qui n'apparaît que par
 // une animation « forwards » depuis un style de base à opacity:0.
 const NEUTRALISER = "@layer refacto-neutraliser{*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}}";
-const PROPRIETES = ["display", "visibility", "position", "top", "right", "bottom", "left", "z-index", "box-sizing", "margin", "padding", "border", "border-radius", "outline", "color", "background-color", "background-image", "opacity", "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-transform", "text-decoration-line", "white-space", "overflow", "flex-direction", "flex-wrap", "justify-content", "align-items", "gap", "grid-template-columns", "grid-template-rows", "transform", "filter", "box-shadow", "cursor", "object-fit", "aspect-ratio"];
+const PROPRIETES = ["display", "visibility", "position", "top", "right", "bottom", "left", "z-index", "box-sizing", "margin", "padding", "border-top", "border-right", "border-bottom", "border-left", "border-radius", "outline", "color", "background-color", "background-image", "opacity", "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-transform", "text-decoration-line", "white-space", "overflow", "flex-direction", "flex-wrap", "justify-content", "align-items", "gap", "grid-template-columns", "grid-template-rows", "transform", "filter", "box-shadow", "cursor", "object-fit", "aspect-ratio",
+  // Ce qui ne se voit pas sur une capture mais change l'usage (un bouton qui ne reçoit plus le clic), puis ce qui ne
+  // se verrait que sur une capture, pour que --sans-captures le voie aussi. « border » est relevé côté par côté : le
+  // raccourci se lit vide dès que les quatre côtés diffèrent
+  "pointer-events", "user-select", "touch-action", "scroll-snap-type", "overscroll-behavior",
+  "background-size", "background-position", "background-repeat", "text-decoration-color", "text-shadow", "text-overflow", "text-indent", "word-spacing", "vertical-align", "list-style-type", "fill", "stroke", "stroke-width", "clip-path", "backdrop-filter", "mix-blend-mode", "object-position", "outline-offset", "accent-color"];
+
+// Une référence se compare avec la liste de propriétés qui l'a produite (relue sur son premier élément) : la liste
+// peut s'allonger d'une version à l'autre sans que chaque élément d'une ancienne référence sorte en écart
+const refFichier = comparer ? JSON.parse(fs.readFileSync(reference, "utf8")) : null;
+const premierReleve = refFichier && Object.values(Object.values(refFichier.etats)[0]?.styles || {})[0];
+const proprietes = premierReleve ? Object.keys(premierReleve).filter((k) => k !== "boite" && !k.startsWith("::")) : PROPRIETES;
+const proprietesAbsentes = PROPRIETES.filter((x) => !proprietes.includes(x));
 
 function releverDansPage(proprietes) {
   const cle = (e) => {
@@ -213,8 +229,11 @@ function elementsOuvrables(nomCherche = null) {
 const navigateur = await puppeteer.launch({ headless: "new" });
 const etats = {};
 const mesures = {};
+// Les erreurs JavaScript de la page sont comparées à celles de la référence ; celles du scénario sont toujours un échec
+const erreursPage = new Set();
 const erreurs = [];
 const ecartesExploration = new Set();
+const envoisBloques = new Set();
 
 // Thèmes : les deux si la page déclare une règle prefers-color-scheme lisible
 async function themesDeLaPage(adresse) {
@@ -261,7 +280,7 @@ async function capturerEtat(p, cleEtat, { garderSouris = false } = {}) {
   // moment où le navigateur recalcule le survol : elle repart dans le coin. Un survol voulu : { garderSouris: true }
   if (!garderSouris) await p.mouse.move(0, 0);
   await pause(300);
-  etats[cleEtat] = await p.evaluate(releverDansPage, PROPRIETES);
+  etats[cleEtat] = await p.evaluate(releverDansPage, proprietes);
   try { etats[cleEtat].a11y = aplatir(await p.accessibility.snapshot({ interestingOnly: true })).join("\n"); }
   catch (e) { etats[cleEtat].a11y = "(arbre d'accessibilité illisible : " + e.message + ")"; }
   if (avecCaptures) {
@@ -285,7 +304,8 @@ for (const { nom: nomPage, adresse } of pages) {
       const combinaison = `${largeur}-${theme}`;
       const ctx = await navigateur.createBrowserContext();
       const p = await ctx.newPage();
-      p.on("pageerror", (e) => erreurs.push(`${prefixe}${combinaison} : ${e.message}`));
+      // L'adresse du serveur de test sort du message : son port change à chaque lancement
+      p.on("pageerror", (e) => erreursPage.add(`${prefixe}${combinaison} : ${e.message.split(new URL(adresse).origin).join("")}`));
       // Avant tout chargement : la règle de sécurité se lit à l'arrivée sur la page
       if (contournerCsp) await p.setBypassCSP(true);
       const mobile = largeur < 768;
@@ -316,8 +336,21 @@ for (const { nom: nomPage, adresse } of pages) {
 
       // Exploration : chaque élément ouvrable, à partir d'une page rechargée et d'un stockage vide à chaque fois
       if (explorer) {
+        // Un clic de l'exploration ne doit rien envoyer (compteur, formulaire géré en JavaScript, paiement) : toute
+        // requête qui n'est pas une simple lecture est bloquée, et dite
+        await p.setRequestInterception(true);
+        p.on("request", (q) => {
+          if (q.isInterceptResolutionHandled()) return;
+          if (["GET", "HEAD", "OPTIONS"].includes(q.method())) { q.continue(); return; }
+          envoisBloques.add(`${prefixe}${q.method()} ${q.url().split("?")[0].split(new URL(adresse).origin).join("")}`);
+          q.abort();
+        });
+        const cdp = await p.createCDPSession();
         const recharger = async () => {
+          // Stockage vidé en entier, bases IndexedDB et caches compris, pour que l'état ouvert par un élément ne
+          // dépende pas de ceux ouverts avant lui. Les cookies restent : preparer() a pu en poser
           await p.evaluate(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} });
+          await cdp.send("Storage.clearDataForOrigin", { origin: new URL(adresse).origin, storageTypes: "local_storage,indexeddb,cache_storage,service_workers,websql,file_systems" }).catch(() => {});
           await p.goto(adresse, { waitUntil: "networkidle0" });
           await p.evaluate(() => document.fonts && document.fonts.ready);
           await pause(300);
@@ -343,7 +376,9 @@ for (const { nom: nomPage, adresse } of pages) {
 }
 const themes = [...themesVus];
 
-function nomFichier(cleEtat) { return cleEtat.replace(/[^a-z0-9._-]+/gi, "_") + ".png"; }
+// Le nom lisible perd les accents et les symboles : deux états « + » et « − » tomberaient sur le même fichier, et la
+// comparaison de pixels porterait sur la mauvaise capture. L'empreinte du nom complet les sépare
+function nomFichier(cleEtat) { return cleEtat.replace(/[^a-z0-9._-]+/gi, "_") + "-" + crypto.createHash("sha1").update(cleEtat).digest("hex").slice(0, 8) + ".png"; }
 
 // Comparaison de deux captures pixel par pixel, dans le navigateur (aucune dépendance à installer). Rend aussi une
 // image des différences : la capture d'après en gris pâle, les pixels qui changent nettement en rouge.
@@ -413,16 +448,25 @@ function tableauPoids(avant) {
 
 const noms = Object.keys(etats);
 if (!comparer) {
-  fs.writeFileSync(reference, JSON.stringify({ pages: pages.map((x) => x.nom || x.adresse), largeurs, themes, date: new Date().toISOString(), etats, mesures }));
+  fs.writeFileSync(reference, JSON.stringify({ pages: pages.map((x) => x.nom || x.adresse), largeurs, themes, date: new Date().toISOString(), etats, mesures, erreurs: [...erreursPage].sort() }));
   console.log(`Empreinte enregistrée : ${noms.length} états (${largeurs.join(", ")} px ; ${themes.join(", ")}) dans ${reference}`);
   if (contournerCsp) console.log(NOTE_CSP);
   if (avecCaptures) console.log(`Captures : ${dossierCaptures}`);
   console.log(`Poids et vitesse (${largeurs[0]} px, ${themes[0]}) :\n   - ` + tableauPoids(null).map((l) => l.texte).join("\n   - "));
   if (ecartesExploration.size) console.log(`Exploration, non ouverts :\n   - ` + [...ecartesExploration].join("\n   - "));
+  if (envoisBloques.size) console.log(NOTE_ENVOIS());
+  if (erreursPage.size) console.log("Attention : erreurs JavaScript déjà présentes AVANT la refactorisation, à signaler :\n   - " + [...erreursPage].sort().join("\n   - "));
   for (const [k, v] of Object.entries(etats)) if (v.deborde) console.log(`Note : ${k} déborde horizontalement (${v.deborde} px de large), défaut déjà présent avant refactorisation.`);
 } else {
-  const refFichier = JSON.parse(fs.readFileSync(reference, "utf8"));
   const ref = refFichier.etats;
+  // Ce qui est réellement comparé dépend de ce que la référence contient : le dire, ne jamais l'annoncer à tort
+  const a11yComparee = Object.values(ref).every((a) => a.a11y !== undefined);
+  const pixelsCompares = avecCaptures && Object.values(ref).every((a) => a.capture);
+  const compare = ["DOM", "styles", ...(a11yComparee ? ["accessibilité"] : []), "focus", ...(pixelsCompares ? ["pixels"] : [])].join(", ");
+  const reserves = [];
+  if (avecCaptures && !pixelsCompares) reserves.push("Pixels NON comparés : la référence a été enregistrée sans captures. La réenregistrer sans --sans-captures pour les comparer.");
+  if (!a11yComparee) reserves.push("Accessibilité NON comparée : la référence ne la contient pas. La réenregistrer.");
+  if (proprietesAbsentes.length) reserves.push(`Référence enregistrée par une version antérieure de l'outil : ${proprietesAbsentes.length} propriété(s) de style ne sont pas comparées (${proprietesAbsentes.join(", ")}). La réenregistrer pour les couvrir.`);
   let ecarts = 0;
   const MAX = 25;
   const bruits = [];
@@ -459,7 +503,7 @@ if (!comparer) {
           image = path.join(dossierEcarts, nomFichier(k));
           fs.writeFileSync(image, Buffer.from(d.image.split(",")[1], "base64"));
         } else if (d.pixels) bruits.push(`${k} : ${d.pixels} pixel(s), ${d.max} sur 255 au plus`);
-      } else lignes.push("capture différente (fichiers de capture introuvables pour mesurer l'écart)");
+      } else lignes.push("capture différente (fichiers de capture introuvables pour mesurer l'écart : référence d'une version antérieure, ou dossier .avant déplacé)");
     }
     resultats.push({ k, lignes, image });
     if (lignes.length) { ecarts++; console.log(`\nÉCART ${k}\n   - ` + lignes.join("\n   - ")); }
@@ -469,18 +513,31 @@ if (!comparer) {
   const poids = tableauPoids(refFichier.mesures || null);
   console.log(`\nPoids et vitesse (${largeurs[0]} px, ${themes[0]}), à titre d'information, jamais compté comme écart :\n   - ` + poids.map((l) => l.texte).join("\n   - "));
   if (ecartesExploration.size) console.log(`Exploration, non ouverts :\n   - ` + [...ecartesExploration].join("\n   - "));
+  if (envoisBloques.size) console.log(NOTE_ENVOIS());
   if (contournerCsp) console.log(NOTE_CSP);
-  console.log(`\n${noms.length} états comparés à ${reference} : ${ecarts ? ecarts + " état(s) avec écart" : "identiques (DOM, styles, accessibilité, focus" + (avecCaptures ? ", pixels)" : ")")}`);
-  ecrireRapport(resultats, ecarts, bruits, poids);
+  // Une erreur JavaScript apparue ou disparue est un changement de comportement ; une erreur déjà là à
+  // l'enregistrement n'en est pas un
+  const avantErr = refFichier.erreurs, apresErr = [...erreursPage].sort();
+  let erreursChangees = [];
+  if (!avantErr) erreursChangees = apresErr.map((e) => "erreur JavaScript (la référence, plus ancienne, ne dit pas si elle existait déjà) : " + e);
+  else {
+    erreursChangees = [...apresErr.filter((e) => !avantErr.includes(e)).map((e) => "erreur JavaScript apparue : " + e), ...avantErr.filter((e) => !apresErr.includes(e)).map((e) => "erreur JavaScript disparue : " + e)];
+    const memes = apresErr.filter((e) => avantErr.includes(e));
+    if (memes.length) console.log("Erreurs JavaScript déjà présentes à l'enregistrement, inchangées :\n   - " + memes.join("\n   - "));
+  }
+  if (erreursChangees.length) console.log("\nÉCART erreurs JavaScript\n   - " + erreursChangees.join("\n   - "));
+  if (reserves.length) console.log("\n" + reserves.join("\n"));
+  console.log(`\n${noms.length} états comparés à ${reference} : ${ecarts ? ecarts + " état(s) avec écart" : `identiques (${compare})`}`);
+  ecrireRapport(resultats, ecarts, bruits, poids, compare, [...reserves, ...erreursChangees]);
   console.log(`Rapport visuel : ${fichierRapport}`);
-  process.exitCode = ecarts ? 1 : 0;
+  process.exitCode = ecarts || erreursChangees.length ? 1 : 0;
 }
-if (erreurs.length) { console.log("Erreurs JavaScript ou de scénario : " + erreurs.join(" | ")); process.exitCode = 1; }
+if (erreurs.length) { console.log("Erreurs de scénario : " + erreurs.join(" | ")); process.exitCode = 1; }
 await navigateur.close();
 if (serveur) await serveur.fermer();
 
 // Rapport visuel autonome (aucune ressource externe), lisible en clair et en sombre, sur téléphone comme sur ordinateur
-function ecrireRapport(resultats, ecarts, bruits, poids) {
+function ecrireRapport(resultats, ecarts, bruits, poids, compare, reserves) {
   const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const lien = (f) => path.relative(path.dirname(path.resolve(fichierRapport)), path.resolve(f)).split(path.sep).map(encodeURIComponent).join("/");
   const figure = (f, legende) => (f && fs.existsSync(f) ? `<figure><a href="${lien(f)}"><img src="${lien(f)}" alt="${esc(legende)}" loading="lazy"></a><figcaption>${esc(legende)}</figcaption></figure>` : "");
@@ -531,15 +588,17 @@ details li{word-break:break-word}
 <body>
 <main>
 <h1>Rapport de refactorisation</h1>
-<p class="sous-titre">Comparaison du ${esc(new Date().toLocaleString("fr-FR"))} à la référence du ${esc(new Date(JSON.parse(fs.readFileSync(reference, "utf8")).date).toLocaleString("fr-FR"))}</p>
+<p class="sous-titre">Comparaison du ${esc(new Date().toLocaleString("fr-FR"))} à la référence du ${esc(new Date(refFichier.date).toLocaleString("fr-FR"))}</p>
 <div class="bilan">
   <div><strong>${resultats.length}</strong>états comparés</div>
   <div><strong>${identiques.length}</strong>identiques</div>
   <div><strong>${ecarts}</strong>avec écart</div>
   <div><strong>${largeurs.join(" et ")} px</strong>thème ${esc(themes.join(" et "))}</div>
 </div>
-<p class="verdict ${ecarts ? "ko" : "ok"}">${ecarts ? `${ecarts} état(s) diffèrent de la référence : détail ci-dessous.` : "Tout est identique à la référence : structure, styles, accessibilité, focus" + (avecCaptures ? " et pixels." : ".")}</p>
+<p class="verdict ${ecarts ? "ko" : "ok"}">${ecarts ? `${ecarts} état(s) diffèrent de la référence : détail ci-dessous.` : `Tout est identique à la référence (${esc(compare)}).`}</p>
+${reserves.map((x) => `<p class="verdict ko">${esc(x)}</p>`).join("\n")}
 ${contournerCsp ? `<p class="note">${esc(NOTE_CSP)}</p>` : ""}
+${envoisBloques.size ? `<p class="note">${esc(NOTE_ENVOIS())}</p>` : ""}
 ${avecEcart.length ? `<h2>États avec écart</h2>\n${cartes}` : ""}
 <h2>Poids et vitesse</h2>
 <p class="note">Mesurés au chargement, à ${largeurs[0]} px en thème ${esc(themes[0])}. Poids compressé recalculé en gzip. Les temps mesurés en local sont indicatifs. Ces chiffres ne comptent jamais comme un écart.</p>

@@ -18,10 +18,13 @@ import path from "node:path";
 const args = process.argv.slice(2);
 const exclus = args.flatMap((a, i) => (a === "--exclure" ? [args[i + 1]] : []));
 const cibles = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--exclure");
-if (!cibles.length) { console.log("Usage : node code-mort.mjs <dossier ou fichiers...> [--pas-de-fichiers]"); process.exit(2); }
+if (!cibles.length) { console.log("Usage : node code-mort.mjs <dossier ou fichiers...> [--exclure morceau-de-chemin]... [--pas-de-fichiers]"); process.exit(2); }
 
 const IGNORES = new Set(["node_modules", ".git", ".vercel", ".next", "__pycache__"]);
-const TEXTE = new Set([".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json", ".webmanifest", ".svg", ".md", ".xml", ".txt", ".py", ".php"]);
+// Les fichiers TypeScript, JSX et de composants comptent comme « code qui utilise » : sans eux, toutes les classes d'une
+// appli React ou Vue sortiraient mortes
+const SCRIPTS = [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".tsx", ".jsx"];
+const TEXTE = new Set([...SCRIPTS, ".vue", ".svelte", ".astro", ".html", ".htm", ".css", ".json", ".webmanifest", ".svg", ".md", ".xml", ".txt", ".py", ".php"]);
 const RESSOURCES = new Set([".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".css", ".js", ".mjs", ".mp4", ".webm", ".pdf"]);
 const tous = [];
 function parcourir(p) {
@@ -47,11 +50,20 @@ for (const f of tous.filter((f) => TEXTE.has(ext(f)))) {
     sansStyle.replace(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi, (m, code) => { js.push({ f, t: code }); return ""; });
   } else {
     usages += "\n" + t;
-    if ([".js", ".mjs", ".cjs"].includes(ext(f))) js.push({ f, t });
+    if (SCRIPTS.includes(ext(f))) js.push({ f, t });
   }
 }
 const cssTout = css.map((c) => c.t).join("\n");
 
+// Déclarations d'une règle, sans les blocs imbriqués qu'elle contient
+function sansBlocs(corps) {
+  let sortie = "", prof = 0, debut = 0;
+  for (let k = 0; k < corps.length; k++) {
+    if (corps[k] === "{") { if (!prof) { sortie += corps.slice(debut, corps.lastIndexOf(";", k) + 1); } prof++; }
+    else if (corps[k] === "}") { prof--; if (!prof) debut = k + 1; }
+  }
+  return sortie + corps.slice(debut);
+}
 // Analyse CSS : règles (sélecteur + déclarations) avec leur contexte (@media...), @keyframes à part
 function analyser(texte, contexte = "", regles = [], keyframes = []) {
   texte = texte.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -59,13 +71,20 @@ function analyser(texte, contexte = "", regles = [], keyframes = []) {
   while (i < texte.length) {
     const ouvre = texte.indexOf("{", i);
     if (ouvre < 0) break;
-    const tete = texte.slice(i, ouvre).trim().replace(/^[;}\s]+/, "");
+    // Le sélecteur commence après le dernier point-virgule : ce qui précède est une instruction sans bloc (@import,
+    // @charset, « @layer a, b; ») ou, dans une règle imbriquée, les déclarations du parent. Sans cela, la première
+    // règle qui suit un @import était avalée avec lui
+    const tete = texte.slice(i, ouvre).split(";").pop().trim().replace(/^[}\s]+/, "");
     let prof = 1, j = ouvre + 1;
     while (j < texte.length && prof) { if (texte[j] === "{") prof++; else if (texte[j] === "}") prof--; j++; }
     const corps = texte.slice(ouvre + 1, j - 1);
     if (/^@(-webkit-)?keyframes/i.test(tete)) keyframes.push(tete.split(/\s+/)[1]);
-    else if (/^@(media|supports|container|layer|document)/i.test(tete)) analyser(corps, tete, regles, keyframes);
-    else if (!tete.startsWith("@")) regles.push({ selecteur: tete, corps: corps.trim(), contexte });
+    else if (/^@(media|supports|container|layer|document|scope|starting-style)/i.test(tete)) analyser(corps, tete, regles, keyframes);
+    else if (!tete.startsWith("@")) {
+      // Règles imbriquées (.carte { ... .titre { ... } }) : le parent garde ses déclarations, les enfants sont lus à part
+      regles.push({ selecteur: tete, corps: sansBlocs(corps).trim(), contexte });
+      if (corps.includes("{")) analyser(corps, (contexte + " " + tete).trim(), regles, keyframes);
+    }
     i = j;
   }
   return { regles, keyframes };

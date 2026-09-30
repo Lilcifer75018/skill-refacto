@@ -49,7 +49,7 @@ L'empreinte est relevée dans un vrai navigateur (Chromium, piloté par Puppetee
 | Élément comparé | Ce qui est relevé | Ce que cela détecte |
 |---|---|---|
 | Structure de la page | Le DOM rendu, scripts exclus | Un élément ajouté, supprimé ou déplacé, même invisible |
-| Styles | Le style calculé de chaque élément visible (42 propriétés) et de ses pseudo-éléments `::before` et `::after`, ainsi que sa position et sa taille | Une marge, une couleur ou une police modifiée |
+| Styles | Le style calculé de chaque élément visible (69 propriétés) et de ses pseudo-éléments `::before` et `::after`, ainsi que sa position et sa taille | Une marge, une couleur ou une police modifiée |
 | Accessibilité | L'arbre lu par les lecteurs d'écran : rôle, nom et état (déplié, coché, désactivé) de chaque élément | Un bouton renommé pour les lecteurs d'écran, un titre qui perd son niveau, un menu qui n'annonce plus s'il est ouvert |
 | Focus | L'élément qui a le focus clavier | Une navigation au clavier cassée |
 | Débordement | La largeur réelle de la page | Un défilement horizontal apparu sur téléphone |
@@ -84,7 +84,7 @@ L'écart est localisé (quel élément, quelle propriété, quelle valeur avant 
 
 Une page ne se résume pas à son affichage au chargement : un menu ouvert, un onglet sélectionné ou un message d'erreur sont autant d'états qu'une modification peut casser. Le skill les trouve de deux façons.
 
-- **L'exploration automatique** (option `--explorer`). L'outil ouvre seul, un par un, chaque bouton, onglet, menu déroulant et lien interne de la page, à partir d'une page rechargée à chaque fois, et capture l'état obtenu. Il ne clique jamais un bouton destructif (supprimer, effacer, réinitialiser, se déconnecter) ni un bouton d'envoi de formulaire, et il ne suit pas un lien qui mène à une autre page : il les liste dans son résultat.
+- **L'exploration automatique** (option `--explorer`). L'outil ouvre seul, un par un, chaque bouton, onglet, menu déroulant et lien interne de la page, à partir d'une page rechargée à chaque fois, et capture l'état obtenu. Il ne clique jamais un bouton destructif (supprimer, effacer, réinitialiser, se déconnecter) ni un bouton d'envoi de formulaire, et il ne suit pas un lien qui mène à une autre page : il les liste dans son résultat. Pendant l'exploration, toute requête qui envoie des données (compteur, formulaire géré en JavaScript) est bloquée et signalée, et le stockage de la page est vidé entre deux éléments.
 - **Le scénario.** Les états qui demandent plusieurs actions, comme un formulaire rempli puis envoyé ou un parcours complet, sont décrits dans un court fichier, rejoué à l'identique avant et après. Un modèle est fourni (`exemple-etats.mjs`).
 
 Sur une application réelle, l'exploration a ouvert seule 18 états (onglets, feuilles, carrousels), et deux mesures successives sans modification sont ressorties identiques.
@@ -137,7 +137,7 @@ Le skill s'appuie sur cinq scripts Node, dans `skills/refacto/scripts/`. Ils fon
 | `sorties.mjs` | Pour un script (construction de site, export) : compare le code de sortie, le texte affiché et les fichiers produits, à l'octet près | `node sorties.mjs reference.json --commande "node build.mjs" --produit dist` |
 | `verifier-syntaxe.mjs` | Vérifie la syntaxe des fichiers JavaScript, des scripts écrits dans les pages HTML, des blocs JSON-LD, des fichiers JSON et Python | `node verifier-syntaxe.mjs mon-projet/` |
 | `code-mort.mjs` | Liste les suspects : classes CSS jamais utilisées, variables et animations inutilisées, déclarations en double, fonctions jamais appelées, fichiers orphelins | `node code-mort.mjs mon-projet/ --exclure dist` |
-| `auto-test.mjs` | Vérifie que les quatre outils précédents fonctionnent sur votre machine (36 contrôles sur un site de test) | `node auto-test.mjs` |
+| `auto-test.mjs` | Vérifie que les quatre outils précédents fonctionnent sur votre machine (49 contrôles sur un site de test) | `node auto-test.mjs` |
 
 `empreinte.mjs` et `sorties.mjs` suivent la même logique : au premier lancement, la référence est enregistrée ; aux lancements suivants, la mesure est comparée à cette référence. Le code de sortie vaut 0 si tout est identique et 1 sinon, ce qui permet de les utiliser dans une chaîne d'intégration continue.
 
@@ -189,7 +189,7 @@ Copiez le dossier `skills/refacto` dans `~/.claude/skills/`.
 node ~/.claude/skills/refacto/scripts/auto-test.mjs
 ```
 
-Le résultat attendu est « 36 contrôles, 0 échec(s) ». Après une installation par plugin, le script se trouve dans `~/.claude/plugins/cache/lilian-barty-refacto/refacto/<version>/skills/refacto/scripts/`.
+Le résultat attendu est « 49 contrôles, 0 échec(s) ». Après une installation par plugin, le script se trouve dans `~/.claude/plugins/cache/lilian-barty-refacto/refacto/<version>/skills/refacto/scripts/`.
 
 ## Utilisation
 
@@ -214,6 +214,9 @@ Le skill couvre les pages HTML, les sites statiques, les petites applications we
 - Sur un site de plusieurs dizaines de pages, l'exploration rallonge nettement la mesure : la limiter avec `--max-etats` et `--largeurs`, ou la réserver aux pages interactives.
 - Les éléments animés en continu (bandeau qui défile, compteur) peuvent laisser des écarts de moins de 3 pixels. Ils sont signalés comme tels dans le rapport.
 - Une page protégée par une règle de sécurité stricte (Content-Security-Policy) se mesure avec l'option `--contourner-csp`, qui lève cette règle dans le navigateur de test. Un changement que la règle bloquerait en ligne, comme un style ou un script écrit dans la page, échappe alors à la mesure : il se vérifie dans le code modifié et par les tests du projet.
+- Le contenu d'un Shadow DOM ou d'une iframe n'est comparé qu'aux pixels, pas élément par élément.
+- Sur une application construite par un outil (React, Vue, TypeScript), la mesure porte sur le site construit. Les fichiers .ts, .tsx, .jsx ou .vue ne sont pas vérifiés par `verifier-syntaxe.mjs`, qui le signale : leur contrôle revient à la construction du projet.
+- Une référence enregistrée par une version antérieure reste utilisable, mais l'outil indique ce qu'elle ne couvre pas ; il vaut mieux l'enregistrer à nouveau.
 - Les temps d'affichage mesurés sur votre machine sont indicatifs et ne remplacent pas une mesure en conditions réelles.
 - Le skill fonctionne dans Claude Code, sur votre machine. Il ne fonctionne pas dans l'application Claude sur le web, qui ne dispose ni de Node ni d'un navigateur piloté.
 - Le skill est rédigé en français.
