@@ -1,5 +1,9 @@
 # Versions
 
+## 1.3.1, le 1er octobre 2026
+
+Ajout d'une règle anti-AI slop dans le skill : pas de remplissage, pas de chiffres inventés, pas de commentaires qui paraphrasent le code, relecture de la sortie avant de rendre.
+
 ## 1.3.0, le 30 septembre 2026
 
 Audit des outils : chaque correction ferme un cas où un changement pouvait passer inaperçu, ou un cas où l'outil annonçait une vérification qui n'avait pas eu lieu.

@@ -176,3 +176,7 @@ Une refactorisation est du code non trivial : effort élevé au minimum, très �
 - Chaque suspect de l'inventaire est confirmé ou écarté, chaque état visible est dans le scénario, chaque lot est vérifié. Compter les entrées et les sorties avant de rendre.
 - Aucun « et ainsi de suite », aucun échantillon présenté comme complet, aucun TODO laissé dans le code rendu.
 - Le rangement sans effet visible va jusqu'au bout sans interruption. Les points d'arrêt du skill (corrections et décisions soumises à l'utilisateur, tests rouges au départ) priment sur cette règle.
+
+## Règle anti-AI slop (obligatoire)
+
+Tout ce que ce skill produit (code, commentaires, rapport, messages) doit pouvoir passer pour le travail soigné d'un humain compétent. Interdits : remplissage et formules creuses, emphase qui ne mesure rien (crucial, essentiel, robuste...), tirets cadratins, oppositions de décor ("ce n'est pas X, c'est Y"), listes et tricolons mécaniques, faits, chiffres ou résultats de mesure inventés, commentaires de code qui paraphrasent le code. Un chiffre mesuré ou rien. Si un skill de relecture anti-IA est installé (par exemple `avoid-ai-writing` pour l'anglais), l'appliquer au rapport. Avant de rendre : relire sa propre sortie contre ces interdits et corriger.
